@@ -145,6 +145,13 @@ inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID","Colon
   select(-BehaviourCount) %>% 
   arrange(ObsDate)
 
+write.csv(SubCall_All,"SubCall.csv",row.names = FALSE)
+
+SubCall <- read.csv("SubCall.csv")
+names(SubCall)
+
+
+
 #as a curiosity I want assess how many rows I lose when excluding animals that were apparently assign the wrong colony 
 # I lose from 29822 to 29771 thus really not bad 
 
