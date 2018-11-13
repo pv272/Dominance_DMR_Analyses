@@ -81,7 +81,9 @@ FROM
     INNER JOIN `Moleratdatabase`.`tblAnimalID` USING (`AnimalID`)) AS `betweenqry` ON filldate BETWEEN betweenqry.MemberFrom AND betweenqry.MemberTo - INTERVAL 1 DAY 
 WHERE
     Colony <> 'DEAD'
-ORDER BY AnimalID , filldate")
+ORDER BY AnimalID , filldate") %>% 
+  mutate(filldate=as.Date(filldate)) %>% 
+  select(Colony,filldate,AnimalID)
 
 ```
 
@@ -99,12 +101,19 @@ FROM user_philippev.SubCall_Scan
 mutate(ObsDate=as.Date(ObsDate)) %>% 
     lapply(., function(x) rep(x,.$BehaviourCount)) %>% #to repeat the rows for interactions that have happened several times
   as.data.frame(.)
-nrow(ScanCall)
+
+#I could randomize within scan 
+
 
 #focal calls
 FocalCall <- con %>%
-  dbGetQuery("SELECT * FROM user_philippev.SubCall_Focal") %>% 
-mutate(ObsDate=as.Date(ObsDate))
+dbGetQuery("SELECT * FROM user_philippev.SubCall_Focal") %>% 
+mutate(ObsDate=as.Date(ObsDate)) %>% 
+rename(NBCall=NbCall) %>% 
+lapply(., function(x) rep(x,.$BehaviourCount)) %>% 
+as.data.frame(.)#to repeat the rows for interactions that have happened several times
+
+#I could randomize within focal 
 ```
 
 
@@ -119,11 +128,8 @@ FocalCall_Tidy<- FocalCall %>%
   bind_rows(FocalCall %>% 
   filter (Received == 0) %>% 
   rename(Winner=AnimalID, Loser=Partner)) %>% 
-  select(-Received) %>% 
-    lapply(., function(x) rep(x,.$BehaviourCount)) %>% 
-  as.data.frame(.)#to repeat the rows for interactions that have happened several times
-nrow(FocalCall_Tidy)
-View(FocalCall_Tidy)
+  select(-Received)
+
 #I could add the label of the context here 
 
 ```
@@ -131,28 +137,20 @@ View(FocalCall_Tidy)
 
 We can now bind the focal and the scan data together
 ```{r}
-names(FocalCall_Tidy)
-names(ScanCall)
-
 SubCall_All<-FocalCall_Tidy %>% 
   bind_rows(ScanCall) %>% 
   filter (Winner != Loser) %>% #eliminate animals that interacts with themselves
-  inner_join(.,GroupComp,by= c("Date" = "Date","Loser" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded loser were not part of the correct group
-  rename(LoserRef=AnimalRef) %>% 
-inner_join(.,GroupComp,by= c("Date" = "Date","Winner" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded winner were not part of the correct group
-    rename(WinnerRef=AnimalRef)
+  inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded loser were not part of the correct group
+inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded winner were not part of the correct group
+  select(-BehaviourCount) %>% 
+  arrange(ObsDate)
+
+#as a curiosity I want assess how many rows I lose when excluding animals that were apparently assign the wrong colony 
+# I lose from 29822 to 29771 thus really not bad 
 
 #The context given a number is wrong BECAUSE the value between scan and focal are not corresponding. Thus I would beed to bering the text. But for now it has no importance
 
-
 ```
 
 
 
-
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
