@@ -29,8 +29,9 @@ set.seed(123)
 
 
 
-To check for possible errors, we must extract the group composition on every day of obervation. At the moment this is exctracted using the GroupComp query done by Tim Vink but which could be made much easier with the use of lead and lag function.
-```{r group comp}
+```{r database extract}
+
+#To check for possible errors, we must extract the group composition on every day of obervation. At the moment this is exctracted using the GroupComp query done by Tim Vink but which could be made much easier with the use of lead and lag function.
 
 GroupComp<- con %>%
   dbGetQuery ("SELECT 
@@ -83,12 +84,20 @@ WHERE
     Colony <> 'DEAD'
 ORDER BY AnimalID , filldate") %>% 
   mutate(filldate=as.Date(filldate)) %>% 
-  select(Colony,filldate,AnimalID)
+  select(Colony,filldate,AnimalID) %>% 
+  rename(ColonyExtracted=Colony)#I rename for when I want to do my datacheck later on and see whether the colony name from observation is the same than the one extracted from Group comp
+
+# I need the sex of the winner and loser to distinguish between the different type of interactions
+Sex<-con %>% 
+  dbGetQuery("SELECT *
+FROM Moleratdatabase.tblSex
+") %>% 
+  select(AnimalID,Sex)
 
 ```
 
 
-
+## Preparation of sub call dataset 
 
 Extract the sub call from the scan and the focal data from the old fashion import. Thus most recend data are missing. The new fashion way will have to be added which will require a few axtra steps
 ```{r SubCall}
@@ -100,9 +109,70 @@ FROM user_philippev.SubCall_Scan
 ") %>% 
 mutate(ObsDate=as.Date(ObsDate)) %>% 
     lapply(., function(x) rep(x,.$BehaviourCount)) %>% #to repeat the rows for interactions that have happened several times
-  as.data.frame(.)
+  as.data.frame(.) %>% 
+inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID")) %>% #this is to exclude rows where recorded loser were not part of the correct group
+  rename(ColonyExtractedLoser = ColonyExtracted) %>% 
+inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID")) %>% 
+   rename(ColonyExtractedWinner = ColonyExtracted)
 
-#I could randomize within scan 
+# filter(Colony != ColonyExtractedLoser & Colony != ColonyExtractedWinner)
+  
+nrow(ScanCall)
+#17780 rows before any joins 
+#17766 after joining on loserID and Date 
+#17189 after joining on WinnerID and Date. That is very strange why I lose so many rows there
+#I can exclude further with when mismatch between colony and colony extracted 
+
+
+#try to identify the loss of 600 rows or so 
+ScanCall_NoWinner <- con %>%
+  dbGetQuery("SELECT *
+FROM user_philippev.SubCall_Scan
+") %>% 
+mutate(ObsDate=as.Date(ObsDate)) %>% 
+    lapply(., function(x) rep(x,.$BehaviourCount)) %>% #to repeat the rows for interactions that have happened several times
+  as.data.frame(.) %>% 
+inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID")) %>% #this is to exclude rows where recorded loser were not part of the correct group
+  rename(ColonyExtractedLoser = ColonyExtracted) %>% 
+left_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID")) %>% 
+   rename(ColonyExtractedWinner = ColonyExtracted)
+
+setdiff(ScanCall_NoWinner,ScanCall)
+names(ScanCall)
+names(ScanCall_NoWinner)
+x <- anti_join( ScanCall_NoWinner, ScanCall)
+nrow(x)
+summary(x)
+    inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID","Colony"="ColonyExtracted" )) %>% #this is to exclude rows where recorded loser were not part of the correct group
+inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID","Colony"="ColonyExtracted" ))  #this is to exclude rows where recorded winner were not part of the correct group
+
+
+#displaying the mismatch between the colony from the scan file and the colony names extracted from the database. I do not know what those All colonies are 
+Scan_ColMismatch<- con %>%
+  dbGetQuery("SELECT *
+FROM user_philippev.SubCall_Scan
+") %>% 
+mutate(ObsDate=as.Date(ObsDate)) %>% 
+    lapply(., function(x) rep(x,.$BehaviourCount)) %>% #to repeat the rows for interactions that have happened several times
+  as.data.frame(.) %>% 
+  inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID")) %>% 
+  filter(Colony != ColonyExtracted)
+  
+  
+  
+    inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID")) %>% #this is to exclude rows where recorded loser were not part of the correct group
+inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID")) %>%  #this is to exclude rows where recorded winner were not part of the correct group
+  filter(Colony != ColonyExtracted.x|Colony != ColonyExtracted.y)
+
+    
+names(Scan_ColMismatch)
+View(Scan_ColMismatch)#There are 74 rows that are lost
+
+
+
+  
+
+nrow(ScanCall)#17780, 1715 if animal not from the same colony 
 
 
 #focal calls
@@ -113,7 +183,6 @@ rename(NBCall=NbCall) %>%
 lapply(., function(x) rep(x,.$BehaviourCount)) %>% 
 as.data.frame(.)#to repeat the rows for interactions that have happened several times
 
-#I could randomize within focal 
 ```
 
 
@@ -143,21 +212,28 @@ SubCall_All<-FocalCall_Tidy %>%
   inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded loser were not part of the correct group
 inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded winner were not part of the correct group
   select(-BehaviourCount) %>% 
-  arrange(ObsDate)
+  arrange(ObsDate) %>% 
+  inner_join(., Sex, by=c("Winner"="AnimalID")) %>% # add the sex of the winner
+  rename(SexWinner=Sex) %>% 
+  inner_join(., Sex, by=c("Loser"="AnimalID")) %>% #add the sex of the loser
+  rename(SexLoser=Sex) %>% 
+  group_by(ObsRef,ObsType) %>%
+  sample_frac(size = 1, replace = FALSE)#randomize all row within each observation per type of observation
+  
+nrow(SubCall_All)
 
 write.csv(SubCall_All,"SubCall.csv",row.names = FALSE)
 
 SubCall <- read.csv("SubCall.csv")
-names(SubCall)
 
-
-
-#as a curiosity I want assess how many rows I lose when excluding animals that were apparently assign the wrong colony 
-# I lose from 29822 to 29771 thus really not bad 
+# I lose from 29822 to 29771 when I exclude individuals that interacted with each other
+#I lose from 29771 to 28733 when I exclude animals for which there is a mismatch in the colony that is quite a lot and need fixing. I think the likelihood of mistake is higher in scan and perhaps I could fileter out separately  
 
 #The context given a number is wrong BECAUSE the value between scan and focal are not corresponding. Thus I would beed to bering the text. But for now it has no importance
 
 ```
 
+## Preparation of pass data set 
+The idea will be to generate the elo score using pass 
 
 
