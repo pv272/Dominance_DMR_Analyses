@@ -1,0 +1,158 @@
+---
+title: "EloCalculation"
+author: "Philippe"
+date: "12 November 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+We are goint to calculate the dominance index using elo rating in our captive population of Damaraland mole-rat 
+
+```{r setup, include=FALSE}
+library(RMySQL)
+library(getPass)
+library(EloRating)
+library(tidyverse)
+library(lubridate)
+```
+
+We start by establishing a connection with the database
+```{r Database connection}
+con <- dbConnect(MySQL(), user = 'philippev',password = getPass(),  
+                 dbname = 'Moleratdatabase', host = 'Kalahariresearch.org')
+
+#set seed to get always the same randomization
+set.seed(123)
+```
+
+
+
+To check for possible errors, we must extract the group composition on every day of obervation. At the moment this is exctracted using the GroupComp query done by Tim Vink but which could be made much easier with the use of lead and lag function.
+```{r group comp}
+
+GroupComp<- con %>%
+  dbGetQuery ("SELECT 
+    *
+FROM
+    user_philippev.DatesFilledRange
+        INNER JOIN
+    (SELECT 
+        `AnimalID`,
+        `tblAnimalID`.`Rowref`,
+            `DateMoved` `MemberFrom`,
+            `DateTo` `MemberTo`,
+            `Colony`,
+            TIMESTAMPDIFF(DAY, `DateMoved`, DateTo) AS `MemberDays`
+    FROM
+        (SELECT 
+        `AnimalID`,
+            `DateMoved`,
+            `ColonyRef`,
+            CASE
+                WHEN
+                    @lastIndiv = `tblColonyMembership`.`AnimalID`
+                        AND @lastDateMoved <> tblColonyMembership.DateMoved
+                THEN
+                    @lastDateMoved
+                ELSE @lastDateMoved:=NOW()
+            END AS `DateTo`,
+            @lastIndiv:=`tblColonyMembership`.`AnimalID` `PreviousIndivid`,
+            @lastDateMoved:=`tblColonyMembership`.`DateMoved` `PreviousDateMoved`
+    FROM
+        (SELECT 
+        @lastIndiv:='',
+            @lastdatetime:=DATE(0),
+            @lastDateMoved:=DATE(0),
+            UPPER(tblColonyMembership.AnimalID) AnimalID,
+            DateMoved,
+            tblColonyMembership.ColonyRef,
+            CurrentPop
+    FROM
+        `Moleratdatabase`.`tblColonyMembership`
+    LEFT JOIN `Moleratdatabase`.`tblPlace` USING (AnimalID)
+    WHERE
+        CurrentPop = 'L'
+    ORDER BY tblColonyMembership.AnimalID , DateMoved DESC) `tblColonyMembership`
+    ) AS `tmp`
+    INNER JOIN `Moleratdatabase`.`tblColonyCodes` USING (`ColonyRef`)
+    INNER JOIN `Moleratdatabase`.`tblSex` USING (`AnimalID`)
+    INNER JOIN `Moleratdatabase`.`tblAnimalID` USING (`AnimalID`)) AS `betweenqry` ON filldate BETWEEN betweenqry.MemberFrom AND betweenqry.MemberTo - INTERVAL 1 DAY 
+WHERE
+    Colony <> 'DEAD'
+ORDER BY AnimalID , filldate")
+
+```
+
+
+
+
+Extract the sub call from the scan and the focal data from the old fashion import. Thus most recend data are missing. The new fashion way will have to be added which will require a few axtra steps
+```{r SubCall}
+
+#scan call
+ScanCall <- con %>%
+  dbGetQuery("SELECT *
+FROM user_philippev.SubCall_Scan
+") %>% 
+mutate(ObsDate=as.Date(ObsDate)) %>% 
+    lapply(., function(x) rep(x,.$BehaviourCount)) %>% #to repeat the rows for interactions that have happened several times
+  as.data.frame(.)
+nrow(ScanCall)
+
+#focal calls
+FocalCall <- con %>%
+  dbGetQuery("SELECT * FROM user_philippev.SubCall_Focal") %>% 
+mutate(ObsDate=as.Date(ObsDate))
+```
+
+
+For the focal data, we the winner and the loser in a different column. In the current table this is given by the value in the column Received where 0 means winner and 1 means loser
+
+```{r Focal Wrangling}
+
+###Make use of the Received modifier to determine the winner and loser of each interaction and put the focal data in a format that it can be joined to scan data 
+FocalCall_Tidy<- FocalCall %>% 
+  filter (Received == 1) %>% 
+  rename(Loser=AnimalID, Winner=Partner) %>% 
+  bind_rows(FocalCall %>% 
+  filter (Received == 0) %>% 
+  rename(Winner=AnimalID, Loser=Partner)) %>% 
+  select(-Received) %>% 
+    lapply(., function(x) rep(x,.$BehaviourCount)) %>% 
+  as.data.frame(.)#to repeat the rows for interactions that have happened several times
+nrow(FocalCall_Tidy)
+View(FocalCall_Tidy)
+#I could add the label of the context here 
+
+```
+
+
+We can now bind the focal and the scan data together
+```{r}
+names(FocalCall_Tidy)
+names(ScanCall)
+
+SubCall_All<-FocalCall_Tidy %>% 
+  bind_rows(ScanCall) %>% 
+  filter (Winner != Loser) %>% #eliminate animals that interacts with themselves
+  inner_join(.,GroupComp,by= c("Date" = "Date","Loser" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded loser were not part of the correct group
+  rename(LoserRef=AnimalRef) %>% 
+inner_join(.,GroupComp,by= c("Date" = "Date","Winner" = "AnimalID","Colony"="Colony" )) %>% #this is to exclude rows where recorded winner were not part of the correct group
+    rename(WinnerRef=AnimalRef)
+
+#The context given a number is wrong BECAUSE the value between scan and focal are not corresponding. Thus I would beed to bering the text. But for now it has no importance
+
+
+```
+
+
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
