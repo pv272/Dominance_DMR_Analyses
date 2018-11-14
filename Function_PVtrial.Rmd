@@ -1,0 +1,80 @@
+---
+title: "Function_trial"
+author: "Philippe"
+date: "14 November 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+get a function that extract the group of an animal fron a list of data including the (Colony),AnimalID,Date and rest of relevant information whether focal,scan,othertest,Urine,Plasma.
+
+```{r setup, include=FALSE}
+library(RMySQL)
+library(getPass)
+library(EloRating)
+library(tidyverse)
+library(lubridate)
+```
+
+We start by establishing a connection with the database
+```{r Database connection}
+con <- dbConnect(MySQL(), user = 'philippev',password = getPass(),  
+                 dbname = 'Moleratdatabase', host = 'Kalahariresearch.org')
+
+#set seed to get always the same randomization
+set.seed(123)
+
+#get the table Colony Membership and prepare it so it can be used repeatedly
+
+Membership <- con %>%
+  dbGetQuery ("SELECT 
+    AnimalRef,
+    AnimalID,
+    DATE(MemberFrom) AS MemberFrom,
+    DATE(MemberTo) AS MemberTo,
+    ColonyRef,
+    MemberDays,
+    Colony AS QueriedColony
+FROM
+    MoleratViews_Pending.MemberShipBetween
+WHERE ColonyRef <> 120 
+AND Colony <> 'Exported_Nigel'") %>% 
+  mutate(MemberFrom=ymd(MemberFrom),MemberTo=ymd(MemberTo)) %>% 
+  select(AnimalRef,AnimalID,MemberFrom,MemberTo,QueriedColony)
+```
+
+as an example I will take the list of submissive interaction 
+```{r submissive interaction}
+#as an example I will take the list of submissive interaction 
+#the list must have X,y and z
+List <- SubCall_All %>% 
+  select(Colony,Winner,ObsDate)
+
+
+```
+
+
+
+get_colony function:
+List argument must contain Colony, AnimalID, Date 
+```{r get colony}
+
+get_Colony<-function(List,Membership)
+
+ColonyExtracted<-inner_join(List %>% distinct (),Membership,by=c("Winner"="AnimalID")) %>% 
+  filter(ObsDate >= MemberFrom & ObsDate <=MemberTo)
+
+#datacheck for which the queried colony differs from the colony of the list. This are all from observations carried out on the day animal changed group
+ColonyMismatch <- ColonyExtracted %>% 
+  filter(Colony != QueriedColony)
+View(ColonyMismatch)
+
+#get group composition
+GroupComp_Extracted <- inner_join(ColonyExtracted %>% 
+  distinct(ObsDate,QueriedColony),Membership,by="QueriedColony") %>% 
+  filter(ObsDate >= MemberFrom & ObsDate <=MemberTo)
+
+View(GroupComp_Extracted)
+```
+
