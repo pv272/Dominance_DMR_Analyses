@@ -108,3 +108,12 @@ plot_elo <- function(x) {
     geom_point(shape = 3)+
     facet_wrap(~year, scales = "free_x")
 } ## function to plot the elo based on the master_df 
+
+
+#### get pair of 2 IDs  put them in order
+get_pair <- function(A, B) {
+  x <- tibble(name = c(A, B), 
+              order = order(name)) %>% 
+    arrange(order) %>% pull(name)
+  out <- paste0(x, collapse = "_")
+}
