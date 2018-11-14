@@ -94,6 +94,12 @@ FROM Moleratdatabase.tblSex
 ") %>% 
   select(AnimalID,Sex)
 
+#I need the weight for wehen I will need to bind to the closest weight 
+Weight<-con %>% 
+  dbGetQuery("SELECT * FROM user_philippev.Weight_AnimalID") %>% 
+  mutate(WeightDate=ymd(WeightDate))
+
+
 ```
 
 
@@ -166,9 +172,20 @@ SubCall_All<-FocalCall_Tidy %>%
   rename(SexLoser=Sex) %>% 
   group_by(ObsRef,ObsType) %>%
   sample_frac(size = 1, replace = FALSE) %>% #randomize all row within each observation per type of observation
+  ungroup() %>% 
+  arrange(ObsDate) %>% #arrange the observation in ascending order
+  mutate(InteractionRef = 1:n()) %>%  #unique idendity for each interaction and that reflects the chronological sequence
+  group_by(Colony) %>% 
+  mutate(ColonyInteraction_Count = 1:n()) %>% #total number of interaction per colony 
+  ungroup() %>% 
   mutate(InterractionType=ifelse(SexLoser =="F" & SexWinner=="F","Female",
-     ifelse (SexWinner=="M" & SexLoser =="M","Male", "Mixed"))) %>% 
-  ungroup()
+     ifelse (SexWinner=="M" & SexLoser =="M","Male", "Mixed"))) #characterize the type of interaction 
+  names(SubCall_All)
+  View(SubCall_All)
+
+#I need to add how many times each pair has intercated with each other 
+#I need to know how many times each animals has interacted 
+  #mutate(WinnerInteraction_Count = map_dbl(Winner,~sum(.x)) need check the map shit 
   
 
 write.csv(SubCall_All,"SubCall.csv",row.names = FALSE)
@@ -176,6 +193,7 @@ write.csv(SubCall_All,"SubCall.csv",row.names = FALSE)
 SubCall <- read.csv("SubCall.csv")
 
 #The context given a number is wrong BECAUSE the value between scan and focal are not corresponding. Thus I would beed to bering the text. But for now it has no importance
+
 
 ```
 
@@ -194,6 +212,44 @@ View(Call_Summary)
 ```
 
 
+We now can add the individual characteriastic: weight, sex, breeding status
+```{r individual characteristics}
+# only retain the info we are interested in the weight 
+WeightList<-Weight %>% 
+  select(AnimalID,WeightDate,Weight)
+
+#get the winner weight 
+WinnerList<-SubCall %>% 
+  select(ObsDate,Winner) %>% 
+  distinct(Winner,ObsDate)
+
+WinnerWeight<- inner_join(WinnerList,WeightList, by=c("Winner" = "AnimalID")) %>%
+mutate(DayDiff = abs(round(difftime(WeightDate,ObsDate,units="days")))) %>% 
+group_by(Winner,ObsDate) %>% 
+filter(DayDiff == min(DayDiff)) %>%
+ungroup() %>% 
+group_by(Winner,ObsDate,DayDiff) %>% 
+summarise(Weight=mean(Weight)) %>% 
+    ungroup()
+    
+
+nrow(WinnerWeight)
+  
+View(WinnerWeight)
+
+
+
+#get the loser weight
+
+LoserList <- SubCall %>% 
+  select(ObsDate,Loser) %>% 
+  distinct(Loser,ObsDate)
+
+
+
+
+
+```
 
 
 
