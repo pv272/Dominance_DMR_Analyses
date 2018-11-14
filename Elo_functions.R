@@ -1,3 +1,13 @@
+library(RMySQL)
+library(getPass)
+library(EloRating)
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(purrr)
+library(dbplyr)
+
+
 ### FROM MATTIAS SCRIPT 
 #################################################################################
 # Model 3 -- fitting of initial scores and k
@@ -117,3 +127,46 @@ get_pair <- function(A, B) {
     arrange(order) %>% pull(name)
   out <- paste0(x, collapse = "_")
 }
+
+
+####### get ID infos 
+get_group_from_ID_and_Date <- function(ID =NA, 
+                                       DATE =NA, 
+                                       DF_membership = NULL, 
+                                       password = "weshweshyooo"){ ## if DB not true need a df in R with info on ID 
+
+DATE <- ymd_hms(DATE)
+  
+if (is.null(DF_membership)) { 
+  con <- dbConnect(MySQL(), user = 'philippev', password = password,  
+                   dbname = 'Moleratdatabase', host = 'Kalahariresearch.org')
+  Membership <- dbGetQuery(con, "SELECT AnimalRef, AnimalID, DATE(MemberFrom) as MemberFrom, DATE(MemberTo) as MemberTo, 
+                           ColonyRef, Colony, MemberDays FROM MoleratViews_Pending.MemberShipBetween
+WHERE ColonyRef <> 120")
+  dbDisconnect(con)
+
+} else {
+  Membership <- DF_membership
+}
+
+  out <- Membership %>% 
+    filter(AnimalID == ID) %>%
+    filter(ymd_hms(MemberTo) > DATE)
+  
+  (DATE >= ymd_hms(Membership$MemberFrom) & DATE <= ymd_hms(Membership$MemberTo))][1]
+  return(out)
+}
+
+d <- data.frame(x = Membership$AnimalID[1:10], 
+                y = Membership$MemberFrom[1:10])
+
+
+
+map2_chr(d$x, d$y, ~ get_group_from_ID_and_Date(ID = .x, DATE = .y, DF_membership = Membership))
+
+get_group_from_ID_and_Date(ID = d$x[2], DATE = d$y[2], DF_membership = Membership)
+
+x <- as.data.frame(x = c(1:10))
+xx <- x %>% mutate(tt = map_df(x, ~ get_group_from_ID_and_Date (DATE = .x, ID = NA, DF_membership = Membership)))
+#set seed to get always the same randomization
+getP
