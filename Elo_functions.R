@@ -130,12 +130,28 @@ get_pair <- function(A, B) {
 
 
 ####### get ID infos 
+DF1 <- Membership
+DF2 <- Membership[1:10, c(2,3)] %>% rename(ID = AnimalID, 
+                                              Date = MemberFrom)
+
+get_group <- function(DF1, DF2){
+  
+  DF2 %>% inner_join(DF1, by = c("ID" = "AnimalID")) %>%
+    mutate(Date = ymd(Date), 
+           MemberFrom = ymd(MemberFrom), 
+           MemberTo = ymd(MemberTo)) %>% 
+    filter(Date >= MemberFrom & Date <= MemberTo)
+}
+
+
+
+
 get_group_from_ID_and_Date <- function(ID =NA, 
                                        DATE =NA, 
                                        DF_membership = NULL, 
-                                       password = "weshweshyooo"){ ## if DB not true need a df in R with info on ID 
+                                       password = "XXX"){ ## if DB not true need a df in R with info on ID 
 
-DATE <- ymd_hms(DATE)
+DATE <- ymd(DATE)
   
 if (is.null(DF_membership)) { 
   con <- dbConnect(MySQL(), user = 'philippev', password = password,  
@@ -149,24 +165,54 @@ WHERE ColonyRef <> 120")
   Membership <- DF_membership
 }
 
-  out <- Membership %>% 
+  out <- Membership %>%
     filter(AnimalID == ID) %>%
-    filter(ymd_hms(MemberTo) > DATE)
-  
-  (DATE >= ymd_hms(Membership$MemberFrom) & DATE <= ymd_hms(Membership$MemberTo))][1]
+    mutate(MemberFrom = ymd(MemberFrom), 
+           MemberTo = ymd(MemberTo)) %>%
+    filter(MemberTo >= DATE) %>%
+    filter(MemberFrom <= DATE) %>% pull(Colony)
+    
   return(out)
 }
+DF3 <- get_group(DF1, DF2)
+get_group_compo <- function(DF3, DF1) {
+  t3 <- DF3 %>% select(Colony, Date) %>% inner_join(., DF1, by= c("Colony" = "Colony")) %>%
+    is.equal(t, t2)
+    mutate(Date = ymd(Date), 
+           MemberFrom = ymd(MemberFrom), 
+           MemberTo = ymd(MemberTo)) %>% 
+    filter(Date >= MemberFrom & Date <= MemberTo)
+  
+}
+test <- get_group_compo(DF3, DF1)
 
-d <- data.frame(x = Membership$AnimalID[1:10], 
-                y = Membership$MemberFrom[1:10])
 
+### example ###########################################################
+DF_test_function <-DF2 %>% mutate(new = map2(ID, Date, ~ get_group_from_ID_and_Date(ID = .x, DATE = .y, DF_membership = Membership)))
+DF_test_df <- get_group(DF1, DF2)
 
-
-map2_chr(d$x, d$y, ~ get_group_from_ID_and_Date(ID = .x, DATE = .y, DF_membership = Membership))
-
-get_group_from_ID_and_Date(ID = d$x[2], DATE = d$y[2], DF_membership = Membership)
-
-x <- as.data.frame(x = c(1:10))
-xx <- x %>% mutate(tt = map_df(x, ~ get_group_from_ID_and_Date (DATE = .x, ID = NA, DF_membership = Membership)))
 #set seed to get always the same randomization
-getP
+get_group_members <- function(ID =NA, 
+                              DATE =NA,
+                              DF_membership = NULL, 
+                              password = "weshweshyooo"){
+  
+  
+  GROUP <- as.character(get_group_from_ID_and_Date(ID = ID, DATE = DATE, DF_membership = Membership))
+  
+  DATE <- ymd(DATE)
+  
+  out <- Membership %>% 
+    filter(Colony %in% GROUP) %>%
+    mutate(MemberFrom = ymd(MemberFrom), 
+           MemberTo = ymd(MemberTo)) %>%
+    filter(MemberTo >= DATE) %>%
+    filter(MemberFrom <= DATE) %>%
+    mutate(Date = DATE)
+  return(out)
+}
+test_function4 <- map2(DF_test_function$ID, DF_test_function$Date, ~ get_group_members(.x, .y, DF_membership = Membership))
+x <- bind_rows(test_function4)
+
+test_df4 <- get_group_compo(DF3, DF1)
+anti_join(test_df4, x)
