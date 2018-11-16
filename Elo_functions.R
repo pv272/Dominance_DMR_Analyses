@@ -1,7 +1,7 @@
 library(RMySQL)
 library(getPass)
 library(EloRating)
-library(tidyverse)
+# library(tidyverse)
 library(lubridate)
 library(dplyr)
 library(purrr)
@@ -130,9 +130,9 @@ get_pair <- function(A, B) {
 
 
 ####### get ID infos 
-DF1 <- Membership
-DF2 <- Membership[1:10, c(2,3)] %>% rename(ID = AnimalID, 
-                                              Date = MemberFrom)
+# DF1 <- Membership
+# DF2 <- Membership[1:10, c(2,3)] %>% rename(ID = AnimalID, 
+#                                               Date = MemberFrom)
 
 get_group <- function(DF1, DF2){
   
@@ -147,34 +147,33 @@ get_group <- function(DF1, DF2){
 
 
 get_group_from_ID_and_Date <- function(ID =NA, 
-                                       DATE =NA, 
-                                       DF_membership = NULL, 
+                                       DATE =NA, ## in date format to speed up
+                                       DF_M = NULL, ## to be provided for large data set, so no need to connect to the db.
                                        password = "XXX"){ ## if DB not true need a df in R with info on ID 
 
-DATE <- ymd(DATE)
-  
-if (is.null(DF_membership)) { 
+if(!(is.Date(DATE))){
+  DATE <- ymd(DATE)
+}
+if (is.null(DF_M)) { 
   con <- dbConnect(MySQL(), user = 'philippev', password = password,  
                    dbname = 'Moleratdatabase', host = 'Kalahariresearch.org')
-  Membership <- dbGetQuery(con, "SELECT AnimalRef, AnimalID, DATE(MemberFrom) as MemberFrom, DATE(MemberTo) as MemberTo, 
+  DF_M <- dbGetQuery(con, "SELECT AnimalRef, AnimalID, DATE(MemberFrom) as MemberFrom, DATE(MemberTo) as MemberTo, 
                            ColonyRef, Colony, MemberDays FROM MoleratViews_Pending.MemberShipBetween
-WHERE ColonyRef <> 120")
+WHERE ColonyRef <> 120") %>% mutate(MemberFrom = ymd(MemberFrom), 
+                                 MemberTo = ymd(MemberTo))
   dbDisconnect(con)
 
-} else {
-  Membership <- DF_membership
+} else if (!(is.Date(DF_M$MemberFrom) & is.Date(DF_M$MemberTo))) {
+  DF_M <- DF_M %>% mutate(MemberFrom = ymd(MemberFrom), 
+                                        MemberTo = ymd(MemberTo))
+}
+  
+out <- DF_M$Colony[DF_M$AnimalID == ID & DF_M$MemberTo >= DATE & DF_M$MemberFrom <= DATE]
+return(out)
 }
 
-  out <- Membership %>%
-    filter(AnimalID == ID) %>%
-    mutate(MemberFrom = ymd(MemberFrom), 
-           MemberTo = ymd(MemberTo)) %>%
-    filter(MemberTo >= DATE) %>%
-    filter(MemberFrom <= DATE) %>% pull(Colony)
-    
-  return(out)
-}
-DF3 <- get_group(DF1, DF2)
+# 
+# DF3 <- get_group(DF1, DF2)
 get_group_compo <- function(DF3, DF1) {
   t3 <- DF3 %>% select(Colony, Date) %>% inner_join(., DF1, by= c("Colony" = "Colony")) %>%
     is.equal(t, t2)
@@ -184,35 +183,40 @@ get_group_compo <- function(DF3, DF1) {
     filter(Date >= MemberFrom & Date <= MemberTo)
   
 }
-test <- get_group_compo(DF3, DF1)
+# test <- get_group_compo(DF3, DF1)
 
 
 ### example ###########################################################
-DF_test_function <-DF2 %>% mutate(new = map2(ID, Date, ~ get_group_from_ID_and_Date(ID = .x, DATE = .y, DF_membership = Membership)))
-DF_test_df <- get_group(DF1, DF2)
+# DF_test_function <-DF2 %>% mutate(new = map2(ID, Date, ~ get_group_from_ID_and_Date(ID = .x, DATE = .y, DF_membership = Membership)))
+# DF_test_df <- get_group(DF1, DF2)
 
 #set seed to get always the same randomization
-get_group_members <- function(ID =NA, 
-                              DATE =NA,
-                              DF_membership = NULL, 
-                              password = "weshweshyooo"){
+get_group_members <- function(ID = NULL, ## if group has to be search based on an ID 
+                              GROUP = NULL, ## if group is already known 
+                              DATE =NA, ## in date format to speed up
+                              DF_M = NA ## need to be provided
+                              ){
   
+  if (is_empty(GROUP)) {
+  GROUP <- as.character(get_group_from_ID_and_Date(ID = ID, DATE = DATE, DF_M = DF_M))
+  }
   
-  GROUP <- as.character(get_group_from_ID_and_Date(ID = ID, DATE = DATE, DF_membership = Membership))
-  
+  if(!(is.Date(DATE))){
   DATE <- ymd(DATE)
+  }
   
-  out <- Membership %>% 
-    filter(Colony %in% GROUP) %>%
-    mutate(MemberFrom = ymd(MemberFrom), 
-           MemberTo = ymd(MemberTo)) %>%
-    filter(MemberTo >= DATE) %>%
-    filter(MemberFrom <= DATE) %>%
-    mutate(Date = DATE)
+  if (!(is.Date(DF_M$MemberFrom) & is.Date(DF_M$MemberTo))) {
+    
+    DF_M <- DF_M %>% mutate(MemberFrom = ymd(MemberFrom), 
+                            MemberTo = ymd(MemberTo))
+  }
+  
+  out <- DF_M[DF_M$Colony %in% GROUP & DF_M$MemberTo >= DATE & DF_M$MemberFrom <= DATE, ] 
+  out$date <- DATE
   return(out)
 }
-test_function4 <- map2(DF_test_function$ID, DF_test_function$Date, ~ get_group_members(.x, .y, DF_membership = Membership))
-x <- bind_rows(test_function4)
-
-test_df4 <- get_group_compo(DF3, DF1)
-anti_join(test_df4, x)
+# test_function4 <- map2(DF_test_function$ID, DF_test_function$Date, ~ get_group_members(.x, .y, DF_membership = Membership))
+# x <- bind_rows(test_function4)
+# 
+# test_df4 <- get_group_compo(DF3, DF1)
+# anti_join(test_df4, x)
