@@ -30,6 +30,8 @@ We start by establishing a connection with the database
 con <- dbConnect(MySQL(), user = 'philippev',password = getPass(),  
                  dbname = 'Moleratdatabase', host = 'Kalahariresearch.org')
 
+#dbDisconnect(con)
+
 #set seed to get always the same randomization
 set.seed(123)
 ```
@@ -69,7 +71,8 @@ FROM Moleratdatabase.tblSex
 WeightList<-con %>% 
   dbGetQuery("SELECT * FROM user_philippev.Weight_AnimalID") %>% 
   mutate(WeightDate=ymd(WeightDate)) %>% 
-  select(AnimalID,WeightDate,Weight,WeightType)
+  select(AnimalID,WeightDate,Weight,WeightType) %>% 
+  filter(!(is.na(Weight)))
 
 #get the individual characteristics. Regular datacheck must be carried out on this essential query
 ID_Characteristic <-
@@ -230,13 +233,6 @@ save(AllCall_Elo,file="AllCall_Elo.rda")
 #calculation of ELO TO BE ADDED BY COLIN
 
 
-
-
-
-
-#Get the individual characteristic for model TO BE DONR BY PHILIPPE
-
-We now can add the individual characteriastic: weight, sex, breeding status
 ```{r individual characteristics}
 # only retain the info we are interested in the weight 
 rm(list = ls())
@@ -276,6 +272,36 @@ out1 <- d2 %>%
 final_df <- bind_rows(out1$new_df)
 ```
 
+#Get the individual characteristic: weight, sex, breeding status
+
+```{r}
+#get the combination of colony and date
+names(AllCall_Tidy)
+nrow(AllCall_Tidy)
+
+#the colony has already been extracted so we can go straight to the group comp 
+List<-AllCall_Tidy %>% 
+  select(Colony,Date)
+
+
+#get GroupComp
+GroupComp<-get_GroupComp(List,Membership)
+names(GroupComp)
+
+
+#add the closest Weight to all animals within the group
+#we lose 3 lines, because 3 animals have no weigth thus no date of weight and thus no timediff can be computed 
+Weight<-get_Weight(GroupComp %>% select(AnimalID,Date),WeightList)
+nrow(Weight)
+
+#get individual information 
+ID_Info<-get_IDinfo(GroupComp %>% select(AnimalID,Date),ID_Characteristic)
+View(ID_Info)
+nrow(ID_Info)#all matches all good 
+
+#Bring all info together before calculating 
+
+```
 
 
 
