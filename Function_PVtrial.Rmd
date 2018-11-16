@@ -82,17 +82,16 @@ get_colony function:
 List argument must contain AnimalID, Date for which we want to return the colony
 ```{r get colony}
 
-rm(list=ls())
-
 #get_colony gets the colony of the individual on that date. 
 #DF1 gets the list of animal we want to extract the colony. It must have a column specyfing the AnimalID and the Date. If a colony entered manually and subjected to error is present it must be included 
 #DF2 gets the Membership table from the database. It must have a Date from and a Date to
-#get_colony can return two colonies on the same date if the Date corespond to the date an individual change colony
+#get_colony will return two colonies on the same date if the DF1$Date corespond to the date an individual change colony
 
 get_Colony <- function(DF1, DF2) {
   inner_join(DF1 %>% distinct (AnimalID,Date) #one only wants one colony for each day as individual cannot be measure in two colonies simultaneousls
   , DF2, by = "AnimalID") %>%
-  filter(Date >= MemberFrom & Date <= MemberTo)
+  filter(Date >= MemberFrom & Date <= MemberTo)%>% 
+  select(-c(MemberFrom,MemberTo,AnimalRef))
 }
 
 Colony <- get_Colony(
