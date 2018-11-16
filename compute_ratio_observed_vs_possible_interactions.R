@@ -13,7 +13,7 @@ con <- dbConnect(MySQL(), user = 'philippev',password = getPass(),
 #set seed to get always the same randomization
 set.seed(123)
 animals <- con %>% dbGetQuery("SELECT * FROM user_philippev.ID_Characteristic")
- 
+animals$
 dbDisconnect(con)
 
 load("master_df.rda")
@@ -23,19 +23,40 @@ load("master_df.rda")
 d <- master_df$data[[10]]
 
 
-get_birthdate <- function(ID, DF1, VAR, name){
-VAR <- "AnimalID"
-VAR <-enquo(VAR)
+get_birthdate <- function(ID, DF1, VAR_ID, VAR_birth, name){
+VAR_ID <-enquo(VAR_ID)
+VAR_birth <- enquos(VAR_birth, VAR_ID)
+print(VAR_birth)
+name <- enquo(name)
 
-out <- DF1 %>% filter(!!VAR == ID) %>% 
-  mutate(!!name := 2)
-
+out <- DF1 %>% 
+  filter(ID == !!VAR_birth[[2]])  %>%
+  group_by(!!!VAR_birth) %>%
+  summarise(!!name := (!!VAR_birth[[1]])[1])
 return(out)
 }
 
-d$Winner[1]
-x <- vector()
-get_birthdate("G3F002", DF1 = animals, VAR = AnimalID, name = "Phil")
+get_birthdate("G3F018", DF1 = animals, 
+              VAR_ID = AnimalID, 
+              VAR_birth = BirthDate, 
+              name = Phil)
+
+ 
+x <- quo(AnimalID)
+x <- "AnimalID"
+
+animals %>% filter(x == "G3F018") %>% select(x)
+
+vars <- c(var1 = "AnimalID", var2 ="BirthDate")
+
+animals %>% select(!!vars)
+
+?select
+get_birthdate("G3F018", DF1 = animals, 
+              VAR_ID = AnimalID, 
+              VAR_birth = BirthDate, 
+              name = Phil)
+
 animals$
 d$new_col <- map_chr(d$Winner, ~ get_birthdate(ID = .x, DF1 = animals))
 
