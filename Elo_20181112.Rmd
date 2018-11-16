@@ -180,6 +180,7 @@ SubCall_All<-FocalCall_Tidy %>%
   ungroup() %>% 
   mutate(InterractionType=ifelse(SexLoser =="F" & SexWinner=="F","Female",
      ifelse (SexWinner=="M" & SexLoser =="M","Male", "Mixed"))) #characterize the type of interaction 
+str(SubCall_All)
   names(SubCall_All)
   View(SubCall_All)
 
@@ -188,7 +189,7 @@ SubCall_All<-FocalCall_Tidy %>%
   #mutate(WinnerInteraction_Count = map_dbl(Winner,~sum(.x)) need check the map shit 
   
 
-write.csv(SubCall_All,"SubCall.csv",row.names = FALSE)
+write.csv(SubCall_All,"SubCall.csv",row.names = FALSE)#that changes the format of some variable 
 
 SubCall <- read.csv("SubCall.csv")
 
