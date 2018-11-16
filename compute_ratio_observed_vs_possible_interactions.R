@@ -13,9 +13,34 @@ con <- dbConnect(MySQL(), user = 'philippev',password = getPass(),
 #set seed to get always the same randomization
 set.seed(123)
 animals <- con %>% dbGetQuery("SELECT * FROM user_philippev.ID_Characteristic")
+ 
 dbDisconnect(con)
 
 load("master_df.rda")
+
+
+
+d <- master_df$data[[10]]
+
+
+get_birthdate <- function(ID, DF1, VAR, name){
+VAR <- "AnimalID"
+VAR <-enquo(VAR)
+
+out <- DF1 %>% filter(!!VAR == ID) %>% 
+  mutate(!!name := 2)
+
+return(out)
+}
+
+d$Winner[1]
+x <- vector()
+get_birthdate("G3F002", DF1 = animals, VAR = AnimalID, name = "Phil")
+animals$
+d$new_col <- map_chr(d$Winner, ~ get_birthdate(ID = .x, DF1 = animals))
+
+
+
 
 d <- master_df$new_df[[33]]
 name_list <- tibble(ID = unique(c(d$Winner, d$Loser)))
