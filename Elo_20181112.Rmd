@@ -17,6 +17,10 @@ library(RMySQL)
 library(getPass)
 library(EloRating)
 library(tidyverse)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(ggplot2)
 library(lubridate)
 library(hms)
 ```
@@ -141,7 +145,7 @@ The AllCall data set has to be corrected and restructured before eloratings are 
 #In the current dataframe the colony has been recorded manually and may be prone to mistake 
 #We need to exclude interaction of individuals that interacted with themselves
 #We want to exclude the interactions between individuals that belonged to different group on a given date. When interactions occurred on the day individual changed group only interactions where the queried group is similar are possible
-
+source("Elo_functions.R")
 
 #get winner colony 
 WinnerColony <- get_Colony(
@@ -149,7 +153,7 @@ WinnerColony <- get_Colony(
     select(Winner,Date)%>%
     rename(AnimalID=Winner),Membership) %>% 
   select(-ColonyOrigin)
-View(WinnerColony)
+# View(WinnerColony)
 
 
 #get loser colony 
@@ -158,7 +162,7 @@ LoserColony <- get_Colony(
     select(Loser,Date)%>%
     rename(AnimalID=Loser),Membership) %>% 
   select(-ColonyOrigin)
-View(LoserColony)
+# View(LoserColony)
 
 
 AllCall_Tidy<-AllCall%>% 
@@ -180,13 +184,13 @@ AllCall_Tidy<-AllCall%>%
   ungroup()
   
   
-View(AllCall_Tidy)
+# View(AllCall_Tidy)
 names(AllCall_Tidy)
 nrow(AllCall_Tidy)#29771 after removing the interaction with themselves, 28833 after removing winner that have no match in WinnerColony for a given date, 28789 after removing loser that have no match in loser colony,28700 after removing mismatch between queried colony of winner and loser
 
 #Mismatch between Colony and queried colony can at this stage be ignore
-View(AllCall_Tidy %>% 
-  filter(Winner_QueriedColony!=Colony))
+# View(AllCall_Tidy %>% 
+# filter(Winner_QueriedColony!=Colony))
 
 ```
 
@@ -202,7 +206,7 @@ Call_Summary<-AllCall_Tidy  %>%
   replace(., is.na(.), 0) %>% 
   mutate(TotalSession=Scan+Focal) %>% 
   arrange(TotalSession)
-View(Call_Summary)
+# View(Call_Summary)
 
 #colony to retain for analysis of Elo. One decides to keep colony that have had at least 15 sessions 
 ColonyToRetain<-Call_Summary%>% 
@@ -235,7 +239,41 @@ save(AllCall_Elo,file="AllCall_Elo.rda")
 We now can add the individual characteriastic: weight, sex, breeding status
 ```{r individual characteristics}
 # only retain the info we are interested in the weight 
+rm(list = ls())
+source("Elo_functions.R")
+load("AllCall_Elo.rda")
 
+str(AllCall_Elo)
+ 
+### optim K by colony
+d2$all_ids[[1]]
+d2 <- AllCall_Elo %>% nest(-Colony) %>%
+  mutate(all_ids = map(data, ~ unique(c(.x$Winner, .x$Loser)))) %>% ## get list of all ids (needed for fitting the elo)
+  mutate(K = map2_dbl(data, all_ids, ~ optim(par=4,  
+                                             fn = elo.model1,
+                                             burn_in=0, 
+                                             all_ids = .y, 
+                                             IA_data = .x,
+                                             return_likelihood=T, 
+                                             init_elo = 100, 
+                                             method= "Brent", 
+                                             upper = 15, 
+                                             lower = 0)$par)) 
+
+# compute Elo before / after / for Winner and Loser 
+out1 <- d2 %>% 
+  mutate(new_df = pmap(list(X = d2$data, Y = d2$all_ids, Z = as.list(d2$K)), function(X, Y, Z) {
+          out <- elo.model1(par = Z, 
+                            burn_in = 0, 
+                            init_elo = 1000, 
+                            IA_data = X, 
+                            all_ids = Y, 
+                            return_likelihood =F)
+          }
+     )) %>% 
+  mutate(new_df = map2(new_df, Colony, ~ .x %>% mutate(Colony = .y)))
+
+final_df <- bind_rows(out1$new_df)
 ```
 
 
