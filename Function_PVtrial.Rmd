@@ -72,7 +72,7 @@ Winner<- SubCall%>%
   select(Winner,ObsDate) %>% 
   rename(AnimalID=Winner,Date=ObsDate)
 nrow(Winner)
-
+names(SubCall)
 
 ```
 
@@ -84,100 +84,158 @@ List argument must contain AnimalID, Date for which we want to return the colony
 
 rm(list=ls())
 
-#DF1 gets the list of animal we want to extract the colony
-#DF2 gets the Membership table from the database
-#get_colony gets the colony of the individual on that date. It possibly returns two colonies on the same date if the Date corespond to a change in colony
+#get_colony gets the colony of the individual on that date. 
+#DF1 gets the list of animal we want to extract the colony. It must have a column specyfing the AnimalID and the Date. If a colony entered manually and subjected to error is present it must be included 
+#DF2 gets the Membership table from the database. It must have a Date from and a Date to
+#get_colony can return two colonies on the same date if the Date corespond to the date an individual change colony
 
 get_Colony <- function(DF1, DF2) {
   inner_join(DF1 %>% distinct (AnimalID,Date) #one only wants one colony for each day as individual cannot be measure in two colonies simultaneousls
-  , DF2, by = c("Winner" = "AnimalID")) %>%
-  filter(ObsDate >= MemberFrom & ObsDate <= MemberTo)
+  , DF2, by = "AnimalID") %>%
+  filter(Date >= MemberFrom & Date <= MemberTo)
 }
 
-ColonyMembership<-get_Colony(Winner,Membership)
+Colony <- get_Colony(
+  SubCall%>% 
+    select(Winner,ObsDate)%>%
+    rename(AnimalID=Winner,Date=ObsDate),Membership)
+View(ExctractedColony)
 
-#the get_Colony mismatch can be run whenever the original dataframe has a Colony input that was entered manually 
-get_ColonyMismatch<-function(ColonyExtracted)
-  
-  
-  
-  
-  
-#Check the number of entries for which there is a mismatch between the colony recorded and the colony extracted from MemberShip
-  ColonyMismatch <-  ColonyExtracted %>%
-  filter(Colony != QueriedColony)
-  
-#Check the entries for which there are more than one Queried Colony
-    ColonyDuplicate<- ColonyExtracted %>%
-    distinct(Winner,ObsDate,QueriedColony,.keep_all = TRUE) %>% 
-    group_by(Winner,ObsDate) %>% 
-    mutate(ColonyCount=n()) %>% 
+
+#get_Colony_Duplicate(), Check the combination of AnimalID and date for which there are more than one Queried Colony per individual for a given date
+#highlight that some animal may have been observed on the date they changed group and thus will be assigned to two different groups, therefore generating the potential creation of downstream error when querying group composition
+#DF1 is the list of Animal and Date 
+#DF2 is the Membership
+#DF1 gets updated in the function if no colony has been queried out yet
+get_Colony_Duplicate <- function (DF1,DF2){
+  if (is.null(DF1$QueriedColony)){
+    print ("Colony must be extracted")
+    DF1<-get_Colony(DF1,DF2)
+  } 
+    DF1 %>% 
+    mutate(ColonyCount=n()) %>% #could be change for summarized
     filter(ColonyCount>1)
-  
-  ColonyExtracted_NoMismatch<-ColonyExtracted %>%
-    filter(!(Colony != QueriedColony))
-  
-  out<-list(ColonyExtracted,ColonyMismatch,ColonyDuplicate,ColonyExtracted_NoMismatch)
-  
-  return(out)
-  
 }
 
-get_Colony(List = List, Membership = Membership)
+ColonyDuplicate<-get_Colony_Duplicate(ExctractedColony,Membership)
+View(ColonyDuplicate)
 
 
-get_ColonyComp<-function(List,Membership)
+#get_Colony_Mismatch() returns all the rows for which there is a mismatch between a dataframe where the Colony has been entered manually and a dataframe where the colony has been queried from the Membership view of the database
+#can be the result of a mistake in data entry OR the result of the animal being assigned to a wrong colony because it was observed the date it changed group
+#DF1 is the list from which we the have a column for a colony entered manually, a date and an AnimalId
+#DF2 is the data frame returned by get_colony()
 
-#get group composition
-ColonyComp <- inner_join(ColonyExtracted %>% 
-  distinct(ObsDate,QueriedColony),Membership,by="QueriedColony") %>% 
-  filter(ObsDate >= MemberFrom & ObsDate <=MemberTo) %>% 
-  select(QueriedColony,ColonyOrigin,AnimalID,ObsDate)
+get_Colony_Mismatch<-function(DF1,DF2){
+left_join(DF1,DF2,by=c("AnimalID","Date") %>% 
+   filter(Colony != QueriedColony)
+}
 
-View(ColonyComp)
-names(ColonyComp)
+ColonyMismatch<-get_Colony_Mismatch(SubCall%>% 
+    select(Colony,Winner,ObsDate) %>% 
+    rename(AnimalID=Winner,Date=ObsDate),ExctractedColony)
 
 
-get_Weight<-function()
+## this is the version that queries out the colony in case that was not done and returns an output in term of distinct combination of AnimalId and Date, not in terms of rows
+# get_ColonyMismatch<-function(DF1,DF2){
+#   if (is.null(DF1$QueriedColony)){
+#     print ("Colony must be extracted")
+#     DF1<-get_Colony(DF1,DF2)
+#   } 
+#   DF1 %>% filter(Colony != QueriedColony)
+# }
+
+
+#ColonyExtracted_NoMismatch() returns the row for which there is no mismatch bethween the colony entered manually
+#DF1 is the list from which we the have a column for a colony entered manually, a date and an AnimalId
+#DF2 is Membership
+    
+get_Colony_NoMismatch<-function(DF1,DF2){
+  inner_join(DF1 %>% distinct (Colony,AnimalID,Date) #one only wants one colony for each day as individual cannot be measure in two colonies simultaneousls
+  , DF2, by = "AnimalID") %>%
+  filter(Date >= MemberFrom & Date <= MemberTo) %>% 
+  filter(Colony == QueriedColony)
+}
+
+Colony_NoMismatch<-get_Colony_NoMismatch(SubCall%>% 
+    select(Colony,Winner,ObsDate) %>% 
+    rename(AnimalID=Winner,Date=ObsDate),Membership) 
 
   
-ColonyWeight<-inner_join(ColonyComp ,WeightList, by="AnimalID") %>%
-mutate(DayDiff = abs(round(difftime(WeightDate,ObsDate,units="days")))) %>% 
-group_by(AnimalID,ObsDate) %>% 
+View(Colony_NoMismatch)
+
+
+#get_groupcomp(), extract the group composition of the animals which colony has been established 
+#DF1 is the dataframe where a date and a colony are provided and that has has been obtained by get_colony() or get_colony_NoMismatch
+#DF2 is Membership from the database
+
+get_groupcomp<-function(DF1,DF2){
+  inner_join(DF1 %>% 
+  distinct(Date,QueriedColony),DF2,by="QueriedColony") %>% 
+  filter(Date >= MemberFrom & Date <=MemberTo) %>% 
+  select(QueriedColony,ColonyOrigin,AnimalID,Date)
+}
+
+GroupComp<-get_groupcomp(Colony_NoMismatch,Membership)
+names(GroupComp)
+View(GroupComp)#29745 entires 
+
+#get_closestweight() returns the closest weight of all individuals present in a colony at a given time
+#DF1 is a dataframe with a column Date and a column AnimalId. will return the closest weight of all group members at a given date if use output get_groupcomp()
+#DF2 is the weight extracted from the database
+get_Weight<-function(DF1,DF2){
+inner_join(DF1 ,DF2, by="AnimalID") %>%
+mutate(DayDiff = abs(round(difftime(WeightDate,Date,units="days")))) %>% 
+group_by(AnimalID,Date) %>% 
 filter(DayDiff == min(DayDiff)) %>%
 ungroup() %>% 
-group_by(QueriedColony,ColonyOrigin,AnimalID,ObsDate,DayDiff) %>% 
-#group_by_at(., vars(QueriedColony, AnimalID,ObsDate,DayDiff)) %>% 
+group_by(AnimalID,Date,DayDiff) %>% 
 summarise(Weight=mean(Weight)) %>% 
-    ungroup() %>% 
-  rename(WeightDayDiff=DayDiff) %>% 
-  arrange(QueriedColony,ObsDate,AnimalID)
+ungroup() %>% 
+rename(WeightDayDiff=DayDiff) %>% 
+arrange(AnimalID,Date)
+}
 
-View(ColonyWeight)#29743 animals were in the group that were observed
+ClosestWeight<-get_Weight(GroupComp %>%  
+    distinct(AnimalID,Date),WeightList)
 
 
+View(ClosestWeight)#29743 animals were in the group that were observed
 
-#we want the sex, the DOB if any, the litter Ref if any, the age, whether originally wild-caught, the breeding status
-names(ColonyWeight)
-str(ColonyWeight)
-names(ID_Characteristic)
-str(ID_Characteristic)
 
-get_IDinfo<-function()
-  
-ColonyCharacteristic<-left_join(ColonyWeight,ID_Characteristic) %>% 
-  ###AGE
-  mutate(Age=round(difftime(ObsDate,BirthDate,units="days"))) %>% 
-  ### BREEDING STATUS
-  mutate(BreedingStatus = ifelse((WildcaughtQueen == 1 |
-                                    (!is.na(Mother_FirstLitter) & ((Mother_FirstLitter - 90) < ObsDate))|
-                                    (!is.na(Father_FirstLitter) & ((Father_FirstLitter - 90) < ObsDate))),
+#get_IDinfo() extract relevant information from all individual present in a group at a given time
+#DF1 provides the AnimalID and dates. will return the info of all group members at a given date if use output get_groupcomp()
+#DF2 is the individual info extracted from the database
+get_IDinfo<-function(DF1,DF2){
+inner_join(DF1,DF2) %>% 
+###AGE
+mutate(Age=round(difftime(Date,BirthDate,units="days")),
+  DeathAge=round(difftime(DeathDate,BirthDate,units="days"))) %>% 
+### BREEDING STATUS
+mutate(BreedingStatus = ifelse((WildcaughtQueen == 1 |
+                                    (!is.na(Mother_FirstLitter) & ((Mother_FirstLitter - 90) < Date))|
+                                    (!is.na(Father_FirstLitter) & ((Father_FirstLitter - 90) < Date))),
                                  "Breeder",
                                  ifelse(Sex=="M"&& is.na(Age) && ColonyOrigin == "F",
                                         "Undetermined",
                                         "Helper"))) %>% 
-  ### GROUP BY COLONY AND DATE TO RETURN FOR NEXT MUTATE CALLS
-  ### GROUP SIZE, INDIVIDUAL AND GROUP CHARACTERISTICS REGARDLESS OF SEX
+    select(AnimalID,Date,Sex,Wildcaught,LitterRef,Age,BreedingStatus,DeathAge)
+    
+}
+
+IDinfo<-get_IDinfo(GroupComp,ID_Characteristic)
+View(IDinfo)
+
+#get_GroupID_Info
+#compute all individual ranks and number of competitor within group at a given date 
+#DF1 is a dataframe that contains all the IDinfo (including weight) of complete group at given date 
+
+get_info()<-function(DF1){
+IDinfo<-get_IDinfo(GroupComp %>% select(AnimalID,Date),ID_Characteristic)
+View(IDinfo)#29745 which is two lines more than weight. Suggest there may be a duplicate in ID_Characteristics
+names(IDinfo)
+### GROUP BY COLONY AND DATE TO RETURN FOR NEXT MUTATE CALLS
+### GROUP SIZE, INDIVIDUAL AND GROUP CHARACTERISTICS REGARDLESS OF SEX
   group_by(QueriedColony,ObsDate) %>% 
   mutate(WeightRank=min_rank(desc(Weight))) %>% # Weight rank
   mutate(AgeRank=min_rank(desc(Age))) %>% # Age rank, issue when originally wild animals, what to do?
@@ -202,11 +260,10 @@ ColonyCharacteristic<-left_join(ColonyWeight,ID_Characteristic) %>%
   ungroup() 
   # UNGROUP
   
-
-nrow(ColonyCharacteristic)
-View(ColonyCharacteristic)
-  
-  names(ColonyCharacteristic)
+#list 
+#Join Colony and colony of origin
+#Join weight 
+#join individual characteristic 
   
 ```
 
