@@ -11,11 +11,14 @@ editor_options:
 We are goint to calculate the dominance index using elo rating in our captive population of Damaraland mole-rat 
 
 ```{r setup, include=FALSE}
+rm(list=ls())#clean environment
+
 library(RMySQL)
 library(getPass)
 library(EloRating)
 library(tidyverse)
 library(lubridate)
+library(hms)
 ```
 
 We start by establishing a connection with the database
@@ -31,61 +34,25 @@ set.seed(123)
 
 ```{r database extract}
 
-#To check for possible errors, we must extract the group composition on every day of obervation. At the moment this is exctracted using the GroupComp query done by Tim Vink but which could be made much easier with the use of lead and lag function.
-
-GroupComp<- con %>%
+#get the membership from the database
+Membership <- con %>%
   dbGetQuery ("SELECT 
-    *
+    AnimalRef,
+    AnimalID,
+    DATE(MemberFrom) AS MemberFrom,
+    DATE(MemberTo) AS MemberTo,
+    MemberShipBetween.ColonyRef,
+    MemberDays,
+     MemberShipBetween.Colony AS QueriedColony,
+    tblColonyCodes.ColonyOrigin
 FROM
-    user_philippev.DatesFilledRange
-        INNER JOIN
-    (SELECT 
-        `AnimalID`,
-        `tblAnimalID`.`Rowref`,
-            `DateMoved` `MemberFrom`,
-            `DateTo` `MemberTo`,
-            `Colony`,
-            TIMESTAMPDIFF(DAY, `DateMoved`, DateTo) AS `MemberDays`
-    FROM
-        (SELECT 
-        `AnimalID`,
-            `DateMoved`,
-            `ColonyRef`,
-            CASE
-                WHEN
-                    @lastIndiv = `tblColonyMembership`.`AnimalID`
-                        AND @lastDateMoved <> tblColonyMembership.DateMoved
-                THEN
-                    @lastDateMoved
-                ELSE @lastDateMoved:=NOW()
-            END AS `DateTo`,
-            @lastIndiv:=`tblColonyMembership`.`AnimalID` `PreviousIndivid`,
-            @lastDateMoved:=`tblColonyMembership`.`DateMoved` `PreviousDateMoved`
-    FROM
-        (SELECT 
-        @lastIndiv:='',
-            @lastdatetime:=DATE(0),
-            @lastDateMoved:=DATE(0),
-            UPPER(tblColonyMembership.AnimalID) AnimalID,
-            DateMoved,
-            tblColonyMembership.ColonyRef,
-            CurrentPop
-    FROM
-        `Moleratdatabase`.`tblColonyMembership`
-    LEFT JOIN `Moleratdatabase`.`tblPlace` USING (AnimalID)
-    WHERE
-        CurrentPop = 'L'
-    ORDER BY tblColonyMembership.AnimalID , DateMoved DESC) `tblColonyMembership`
-    ) AS `tmp`
-    INNER JOIN `Moleratdatabase`.`tblColonyCodes` USING (`ColonyRef`)
-    INNER JOIN `Moleratdatabase`.`tblSex` USING (`AnimalID`)
-    INNER JOIN `Moleratdatabase`.`tblAnimalID` USING (`AnimalID`)) AS `betweenqry` ON filldate BETWEEN betweenqry.MemberFrom AND betweenqry.MemberTo - INTERVAL 1 DAY 
-WHERE
-    Colony <> 'DEAD'
-ORDER BY AnimalID , filldate") %>% 
-  mutate(filldate=as.Date(filldate)) %>% 
-  select(Colony,filldate,AnimalID) %>% 
-  rename(ColonyExtracted=Colony)#I rename for when I want to do my datacheck later on and see whether the colony name from observation is the same than the one extracted from Group comp
+    MoleratViews_Pending.MemberShipBetween
+LEFT JOIN
+    Moleratdatabase.tblColonyCodes ON MoleratViews_Pending.MemberShipBetween.ColonyRef = tblColonyCodes.ColonyRef
+WHERE MemberShipBetween.ColonyRef <> 120 
+AND MemberShipBetween.Colony <> 'Exported_Nigel'") %>% 
+  mutate(MemberFrom=ymd(MemberFrom),MemberTo=ymd(MemberTo)) %>% 
+  select(AnimalRef,AnimalID,MemberFrom,MemberTo,QueriedColony,ColonyOrigin)
 
 # I need the sex of the winner and loser to distinguish between the different type of interactions
 Sex<-con %>% 
@@ -94,10 +61,18 @@ FROM Moleratdatabase.tblSex
 ") %>% 
   select(AnimalID,Sex)
 
-#I need the weight for wehen I will need to bind to the closest weight 
-Weight<-con %>% 
+#get the weight from the database 
+WeightList<-con %>% 
   dbGetQuery("SELECT * FROM user_philippev.Weight_AnimalID") %>% 
-  mutate(WeightDate=ymd(WeightDate))
+  mutate(WeightDate=ymd(WeightDate)) %>% 
+  select(AnimalID,WeightDate,Weight,WeightType)
+
+#get the individual characteristics. Regular datacheck must be carried out on this essential query
+ID_Characteristic <-
+  con %>% 
+  dbGetQuery("SELECT * FROM user_philippev.ID_Characteristic") %>% 
+  mutate(BirthDate=ymd(BirthDate),DeathDate=ymd(DeathDate),Mother_FirstLitter=ymd(Mother_FirstLitter),Father_FirstLitter=ymd(Father_FirstLitter)) %>% 
+  select(AnimalID,Sex,Wildcaught,WildcaughtQueen,BirthDate,LitterRef,Mother_FirstLitter,Father_FirstLitter,DeathDate)
 
 
 ```
@@ -105,7 +80,7 @@ Weight<-con %>%
 
 ## Preparation of sub call dataset 
 
-Extract the sub call from the scan and the focal data from the old fashion import. Thus most recend data are missing. The new fashion way will have to be added which will require a few axtra steps
+Extract the sub call from the scan and the focal data from the old fashion import. Thus most recend data are missing. The new fashion way will have to be added which will require a few axtra steps. The dataset of scan and focasl data are combined to increase our dataset
 ```{r SubCall}
 
 #scan call
@@ -113,142 +88,153 @@ ScanCall <- con %>%
   dbGetQuery("SELECT *
 FROM user_philippev.SubCall_Scan
 ") %>% 
-mutate(ObsDate=as.Date(ObsDate)) %>% 
+  rename(Date=ObsDate) %>% 
+  mutate(Date=ymd(Date)) %>% 
     lapply(., function(x) rep(x,.$BehaviourCount)) %>% #to repeat the rows for interactions that have happened several times
-  as.data.frame(.) %>% 
-    inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID","Colony"="ColonyExtracted" )) %>% #this is to exclude rows where recorded loser were not part of the correct group, this include the the exclusion of unknown. The best would be to exclude unknown separately, then check when colony <> colony extracted
-inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID","Colony"="ColonyExtracted" ))  #this is to exclude rows where recorded winner were not part of the correct group, this include the the exclusion of unknown
-  
-nrow(ScanCall)
-#17780 rows before any joins 
-#17754 after joining on loserID and Date and Colony
-#17115 after joining on WinnerID and Date and Colony. That is very strange why I lose so many rows there. I lose a lot of rows because many winners are unknown. 
-
+  as.data.frame(.) 
 
 
 #focal calls
 FocalCall <- con %>%
 dbGetQuery("SELECT * FROM user_philippev.SubCall_Focal") %>% 
-mutate(ObsDate=as.Date(ObsDate)) %>% 
-rename(NBCall=NbCall) %>% 
+rename(Date=ObsDate,NBCall=NbCall) %>% 
+mutate(Date=ymd(Date)) %>% 
 lapply(., function(x) rep(x,.$BehaviourCount)) %>% 
 as.data.frame(.)
 
-```
 
 
-For the focal data, we the winner and the loser in a different column. In the current table this is given by the value in the column Received where 0 means winner and 1 means loser
-
-```{r Focal Wrangling}
-
-###Make use of the Received modifier to determine the winner and loser of each interaction and put the focal data in a format that it can be joined to scan data 
+#The focal dataset must be modified to be joined to the scan data 
+#the AnimalID and Receiver must be assigned the label winner or loser. Received where 0 means winner and 1 means loser
 FocalCall_Tidy<- FocalCall %>% 
   filter (Received == 1) %>% 
   rename(Loser=AnimalID, Winner=Partner) %>% 
   bind_rows(FocalCall %>% 
   filter (Received == 0) %>% 
   rename(Winner=AnimalID, Loser=Partner)) %>% 
-  select(-Received) %>% 
-  inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Loser" = "AnimalID","Colony"="ColonyExtracted" )) %>% #this is to exclude rows where recorded loser were not part of the correct group, this include the the exclusion of unknown. The best would be to exclude unknown separately, then check when colony <> colony extracted
-inner_join(.,GroupComp,by= c("ObsDate" = "filldate","Winner" = "AnimalID","Colony"="ColonyExtracted" ))  #this is to exclude rows where recorded winner were not part of the correct group, this include the the exclusion of unknown
-  
-nrow(FocalCall_Tidy)
-#12042 without join
-#11999 after loser join 
-#11661 after loser and winner join 
+  select(-Received)
+
+#combine the dataset of the focal and of the scan
+#randomize within observation session and arrange by ascending chronological order
+AllCall<-FocalCall_Tidy %>% 
+  bind_rows(ScanCall) %>% 
+  mutate(ObsTime=as.hms(ObsTime)) %>% #for whatever reasons the lubridate hms() cannot be arranged. Ask Colin
+  #GROUP BY OBSERVATION TYPE AND REF TO RANDOMIZE OBS WITHIN OBS
+  group_by(ObsRef,ObsType) %>% 
+  sample_frac(size = 1, replace = FALSE) %>% 
+  ungroup() %>% 
+#UNGROUP
+  arrange(Date,ObsTime) %>% 
+  mutate(InterractionRef = 1:n())  #unique idendity for each interaction and that reflects the chronological sequence after randomization 
+
+str(AllCall)
+View(AllCall)
+nrow(AllCall)
+#29822 calls before any tyding up  
+
 ```
 
 
-We can now bind the focal and the scan data together
+The AllCall data set has to be corrected and restructured before eloratings are calculated
 ```{r}
-SubCall_All<-FocalCall_Tidy %>% 
-  bind_rows(ScanCall) %>% 
+
+#In the current dataframe the colony has been recorded manually and may be prone to mistake 
+#We need to exclude interaction of individuals that interacted with themselves
+#We want to exclude the interactions between individuals that belonged to different group on a given date. When interactions occurred on the day individual changed group only interactions where the queried group is similar are possible
+
+
+#get winner colony 
+WinnerColony <- get_Colony(
+  AllCall%>% 
+    select(Winner,Date)%>%
+    rename(AnimalID=Winner),Membership) %>% 
+  select(-ColonyOrigin)
+View(WinnerColony)
+
+
+#get loser colony 
+LoserColony <- get_Colony(
+  AllCall%>% 
+    select(Loser,Date)%>%
+    rename(AnimalID=Loser),Membership) %>% 
+  select(-ColonyOrigin)
+View(LoserColony)
+
+
+AllCall_Tidy<-AllCall%>% 
   filter (Winner != Loser) %>% #eliminate animals that interacts with themselves
-  select(-BehaviourCount) %>% #could always be used in the future
-  arrange(ObsDate) %>% 
-  inner_join(., Sex, by=c("Winner"="AnimalID")) %>% # add the sex of the winner
+  inner_join(.,WinnerColony, by=c("Date"="Date","Winner"="AnimalID")) %>%
+  rename(Winner_QueriedColony=QueriedColony) %>%
+  inner_join(.,LoserColony, by=c("Date"="Date","Loser"="AnimalID")) %>%
+  rename(Loser_QueriedColony=QueriedColony) %>% 
+  filter(Loser_QueriedColony==Winner_QueriedColony) %>%  #removes interactions where colony of the winner ands loser are different. This solves the issue of sub call observed on days animals changed colonies (and are assigned two colonies) because the interaction is possible only when the colony of the winner and the colony of the loser matches. 
+   inner_join(., Sex, by=c("Winner"="AnimalID")) %>% # add the sex of the winner
   rename(SexWinner=Sex) %>% 
   inner_join(., Sex, by=c("Loser"="AnimalID")) %>% #add the sex of the loser
   rename(SexLoser=Sex) %>% 
-  group_by(ObsRef,ObsType) %>%
-  sample_frac(size = 1, replace = FALSE) %>% #randomize all row within each observation per type of observation
-  ungroup() %>% 
-  arrange(ObsDate) %>% #arrange the observation in ascending order
-  mutate(InteractionRef = 1:n()) %>%  #unique idendity for each interaction and that reflects the chronological sequence
-  group_by(Colony) %>% 
-  mutate(ColonyInteraction_Count = 1:n()) %>% #total number of interaction per colony 
-  ungroup() %>% 
   mutate(InterractionType=ifelse(SexLoser =="F" & SexWinner=="F","Female",
-     ifelse (SexWinner=="M" & SexLoser =="M","Male", "Mixed"))) #characterize the type of interaction 
-str(SubCall_All)
-  names(SubCall_All)
-  View(SubCall_All)
-
-#I need to add how many times each pair has intercated with each other 
-#I need to know how many times each animals has interacted 
-  #mutate(WinnerInteraction_Count = map_dbl(Winner,~sum(.x)) need check the map shit 
+     ifelse (SexWinner=="M" & SexLoser =="M","Male", "Mixed"))) %>%
+  ### GROUP BY QUERIED COLONY (WINNER OR LOSER IS SAME)
+  group_by(Winner_QueriedColony) %>% 
+    mutate(ColonyInteraction_Count = 1:n()) %>% #total number of interaction per colony 
+  ungroup()
   
+  
+View(AllCall_Tidy)
+names(AllCall_Tidy)
+nrow(AllCall_Tidy)#29771 after removing the interaction with themselves, 28833 after removing winner that have no match in WinnerColony for a given date, 28789 after removing loser that have no match in loser colony,28700 after removing mismatch between queried colony of winner and loser
 
-write.csv(SubCall_All,"SubCall.csv",row.names = FALSE)#that changes the format of some variable 
-
-SubCall <- read.csv("SubCall.csv")
-
-#The context given a number is wrong BECAUSE the value between scan and focal are not corresponding. Thus I would beed to bering the text. But for now it has no importance
-
+#Mismatch between Colony and queried colony can at this stage be ignore
+View(AllCall_Tidy %>% 
+  filter(Winner_QueriedColony!=Colony))
 
 ```
 
-There may be some colonies for which there are too few observations and that should be excluded from the analysis
 
-```{r call summary}
-Call_Summary<-SubCall_All %>% 
-  group_by(Colony, ObsType) %>% 
-  summarize(ObsCount=n_distinct(ObsRef)) %>% 
-  arrange(ObsType,desc(ObsCount)) %>% 
-  filter(Colony)
+Subsetting of dataset for Elo calculation. One will first only retain Colonies for which there is a total of more than 15 observations sessions
+```{r}
 
-names(Call_Summary)
+#nb of observation sessions per colony
+Call_Summary<-AllCall_Tidy  %>% 
+  group_by(Colony,ObsType) %>% 
+  summarize(SessionCount=n_distinct(ObsRef)) %>% 
+  spread(ObsType,SessionCount) %>% 
+  replace(., is.na(.), 0) %>% 
+  mutate(TotalSession=Scan+Focal) %>% 
+  arrange(TotalSession)
 View(Call_Summary)
 
+#colony to retain for analysis of Elo. One decides to keep colony that have had at least 15 sessions 
+ColonyToRetain<-Call_Summary%>% 
+  filter(TotalSession>14) %>% 
+  select(Colony)
+
+
+#get the dataset for elo calculation after removal of colonies for which we have had less than 15 obs sessions
+AllCall_Elo<-AllCall_Tidy %>% 
+  select(Winner_QueriedColony,Date,Winner,Loser,InterractionType,InterractionRef) %>% 
+  rename(Colony=Winner_QueriedColony) %>% 
+  inner_join(.,ColonyToRetain)
+
+save(AllCall_Elo,file="AllCall_Elo.rda")
+
 ```
 
+
+
+
+#calculation of ELO TO BE ADDED BY COLIN
+
+
+
+
+
+
+#Get the individual characteristic for model TO BE DONR BY PHILIPPE
 
 We now can add the individual characteriastic: weight, sex, breeding status
 ```{r individual characteristics}
 # only retain the info we are interested in the weight 
-WeightList<-Weight %>% 
-  select(AnimalID,WeightDate,Weight)
-
-#get the winner weight 
-WinnerList<-SubCall %>% 
-  select(ObsDate,Winner) %>% 
-  distinct(Winner,ObsDate)
-
-WinnerWeight<- inner_join(WinnerList,WeightList, by=c("Winner" = "AnimalID")) %>%
-mutate(DayDiff = abs(round(difftime(WeightDate,ObsDate,units="days")))) %>% 
-group_by(Winner,ObsDate) %>% 
-filter(DayDiff == min(DayDiff)) %>%
-ungroup() %>% 
-group_by(Winner,ObsDate,DayDiff) %>% 
-summarise(Weight=mean(Weight)) %>% 
-    ungroup()
-    
-
-nrow(WinnerWeight)
-  
-View(WinnerWeight)
-
-
-
-#get the loser weight
-
-LoserList <- SubCall %>% 
-  select(ObsDate,Loser) %>% 
-  distinct(Loser,ObsDate)
-
-
-
-
 
 ```
 
