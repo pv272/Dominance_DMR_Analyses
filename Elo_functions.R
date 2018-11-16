@@ -220,3 +220,16 @@ get_group_members <- function(ID = NULL, ## if group has to be search based on a
 # 
 # test_df4 <- get_group_compo(DF3, DF1)
 # anti_join(test_df4, x)
+
+
+#########################################################################################################################
+#########################################################################################################################
+########################### PHILIPPE FUNCTION CLEAN 
+
+get_Colony <- function(DF1, DF2) {
+  inner_join(DF1 %>% distinct (AnimalID,Date) #one only wants one colony for each day as individual cannot be measure in two colonies simultaneousls
+             , DF2, by = "AnimalID") %>%
+    filter(Date >= MemberFrom & Date <= MemberTo)%>% 
+    select(-c(MemberFrom,MemberTo,AnimalRef))
+}
+
