@@ -168,18 +168,18 @@ View(Colony_NoMismatch)
 #DF1 is the dataframe where a date and a colony are provided and that has has been obtained by get_colony() or get_colony_NoMismatch
 #DF2 is Membership from the database
 
-get_groupcomp<-function(DF1,DF2){
+get_GroupComp<-function(DF1,DF2){
   inner_join(DF1 %>% 
-  distinct(Date,QueriedColony),DF2,by="QueriedColony") %>% 
+  distinct(Date,Colony),DF2,by=c("Colony"="QueriedColony")) %>% 
   filter(Date >= MemberFrom & Date <=MemberTo) %>% 
-  select(QueriedColony,ColonyOrigin,AnimalID,Date)
+  select(Colony,ColonyOrigin,AnimalID,Date)
 }
 
 GroupComp<-get_groupcomp(Colony_NoMismatch,Membership)
 names(GroupComp)
 View(GroupComp)#29745 entires 
 
-#get_closestweight() returns the closest weight of all individuals present in a colony at a given time
+#get_closestweight() returns the closest weight of all individuals present in a colony at a given time. It will only returns a row if a date was collected because a time difference cannot be computed without a date of weight
 #DF1 is a dataframe with a column Date and a column AnimalId. will return the closest weight of all group members at a given date if use output get_groupcomp()
 #DF2 is the weight extracted from the database
 get_Weight<-function(DF1,DF2){
@@ -202,7 +202,7 @@ ClosestWeight<-get_Weight(GroupComp %>%
 View(ClosestWeight)#29743 animals were in the group that were observed
 
 
-#get_IDinfo() extract relevant information from all individual present in a group at a given time
+#get_IDinfo() extract relevant information from all individual present in a group at a given time and present in the ID_characteristic table 
 #DF1 provides the AnimalID and dates. will return the info of all group members at a given date if use output get_groupcomp()
 #DF2 is the individual info extracted from the database
 get_IDinfo<-function(DF1,DF2){
@@ -219,7 +219,6 @@ mutate(BreedingStatus = ifelse((WildcaughtQueen == 1 |
                                         "Undetermined",
                                         "Helper"))) %>% 
     select(AnimalID,Date,Sex,Wildcaught,LitterRef,Age,BreedingStatus,DeathAge)
-    
 }
 
 IDinfo<-get_IDinfo(GroupComp,ID_Characteristic)
