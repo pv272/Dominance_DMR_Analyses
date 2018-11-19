@@ -202,9 +202,10 @@ ClosestWeight<-get_Weight(GroupComp %>%
 View(ClosestWeight)#29743 animals were in the group that were observed
 
 
-#get_IDinfo() extract relevant information from all individual present in a group at a given time and present in the ID_characteristic table 
+#get_IDinfo() extract relevant information from an individual at a given date
 #DF1 provides the AnimalID and dates. will return the info of all group members at a given date if use output get_groupcomp()
 #DF2 is the individual info extracted from the database
+#the breeding status has yet to include the paternity of the wild-caught colony. 
 get_IDinfo<-function(DF1,DF2){
 inner_join(DF1,DF2) %>% 
 ###AGE
@@ -226,9 +227,48 @@ View(IDinfo)
 
 #get_GroupID_Info
 #compute all individual ranks and number of competitor within group at a given date 
-#DF1 is a dataframe that contains all the IDinfo (including weight) of complete group at given date 
+#DF1 is a dataframe that contains all the IDinfo  (Sex,Age,ClosestWeight,BreedingStatus) of complete group at given date 
 
-get_info()<-function(DF1){
+get_GroupID_Info<-function(DF1){DF1 %>%
+  #GROUP BY COLONY AND DATE FOR FOLLOWING MUTATE CALLS: GET INDIVIDUAL AND GROUP CHARACTERISTIC 
+  group_by(Colony,Date) %>% 
+  mutate(GroupSize=n()) %>% # group size
+  mutate(WeightRank=min_rank(desc(Weight)), 
+         AgeRank=min_rank(desc(Age))) %>% # Weight rank, check what it does with NA
+  mutate(CompNB_5=sapply(Weight, function(x) sum(abs(x-Weight)<5)-1),
+         CompNB_10=sapply(Weight, function(x) sum(abs(x-Weight)<10)-1),
+         CompNB_15=sapply(Weight, function(x) sum(abs(x-Weight)<15)-1), 
+         CompNB_20=sapply(Weight, function(x) sum(abs(x-Weight)<20)-1)) %>% 
+  mutate(PupNB=sum(Age<1, na.rm= TRUE)) %>% 
+  mutate(PupPresence=ifelse(PupNB==0,"No","Yes")) %>% 
+  mutate(MinAge=min(Age,na.rm= TRUE)) %>% 
+  ungroup() %>% 
+  # UNGROUP
+  # GROUP BY DATE, COLONY AND SEX FOR FOLLOWING MUTATE CALLS
+  group_by(Date,Colony,Sex) %>% 
+  mutate(QueueSize=n()) %>% #queue size, that is number of males and females
+  mutate(WeightRank_Queue=min_rank(desc(Weight))) %>% #Weight rank
+  mutate(CompNB_5_Queue=sapply(Weight, function(x) sum(abs(x-Weight)<5)-1),
+         CompNB_10_Queue=sapply(Weight, function(x) sum(abs(x-Weight)<10)-1),
+         CompNB_15_Queue=sapply(Weight, function(x) sum(abs(x-Weight)<15)-1), 
+         CompNB_20_Queue=sapply(Weight, function(x) sum(abs(x-Weight)<20)-1)) %>% 
+  ungroup() 
+  # UNGROUP
+}
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
 IDinfo<-get_IDinfo(GroupComp %>% select(AnimalID,Date),ID_Characteristic)
 View(IDinfo)#29745 which is two lines more than weight. Suggest there may be a duplicate in ID_Characteristics
 names(IDinfo)
