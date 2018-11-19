@@ -228,10 +228,12 @@ save(AllCall_Elo,file="AllCall_Elo.rda")
 ```
 
 
+Eloscore could also be computed using passes interactions yet the dataset has to be prepared. 
 
 
-#calculation of ELO TO BE ADDED BY COLIN
 
+
+#Computation of EloScore
 
 ```{r individual characteristics}
 # only retain the info we are interested in the weight 
@@ -272,8 +274,18 @@ out1 <- d2 %>%
 final_df <- bind_rows(out1$new_df)
 ```
 
-#Get the individual characteristic: weight, sex, breeding status
+After Elo has been calculated, one has to organize dataframe in anticipation of statistical analyses and the Elo score that we may want to retain. One should:
+1) add the ratio of interaction per individuals: for each interaction the ratio is of 1:current group size. One can sum the ratio of each interaction to calculate the cumulative ration of interaction/individual. Sanchez 2016 shows that a ratio of 10 is good for steep hierarchy
+2) Add the number of interactions for each given pairs (colin has to provide code since he did that already)
+3) Add the number of interactions each individual was involved in 
 
+
+#statistical inferences on explanatory variables of Elo score
+
+
+##Get explanatory variables for statistical inferences:
+Individual characteristic: weight, sex, age, breeding status, rank
+Add explanatory variables that we could think of. 
 ```{r}
 #get the combination of colony and date
 names(AllCall_Tidy)
@@ -282,30 +294,61 @@ nrow(AllCall_Tidy)
 #the colony has already been extracted so we can go straight to the group comp 
 List<-AllCall_Tidy %>% 
   select(Colony,Date)
-
+names(List)
 
 #get GroupComp
 GroupComp<-get_GroupComp(List,Membership)
 names(GroupComp)
+nrow(GroupComp)
 
 
 #add the closest Weight to all animals within the group
 #we lose 3 lines, because 3 animals have no weigth thus no date of weight and thus no timediff can be computed 
 Weight<-get_Weight(GroupComp %>% select(AnimalID,Date),WeightList)
+names(Weight)
 nrow(Weight)
 
 #get individual information 
 ID_Info<-get_IDinfo(GroupComp %>% select(AnimalID,Date),ID_Characteristic)
 View(ID_Info)
 nrow(ID_Info)#all matches all good 
+names(ID_Info)
 
-#Bring all info together before calculating 
+names(ID_Characteristic)
+
+#Bring all info together before calculating the characteristic of the group 
+#On the database, I would need to add the paternity of originally wildcaught colony and make sure the paternity of lab formed colony is exact
+#what to do with age rank and individual of unknown age? They are older but they cannot be distinguished with one another. 
+Group_ID_Info <-
+  left_join(GroupComp,Weight) %>% 
+  left_join(.,ID_Info)
+nrow(Group_ID_Info)
+names(Group_ID_Info)
+
+
+#get the additional information of the group at every day of observation
+#in case one may need to add rank after removing the breeders: ask Colin how he had done it
+Group_AllInfo<-get_GroupID_Info(Group_ID_Info)
+names(Group_AllInfo)
+nrow(Group_AllInfo)
+
+
+#Questions for Colin
+#1) should we addf the Group_AllInfo into your nested dataframe and if yes how?
+
 
 ```
 
 
 
-## Preparation of pass data set 
-The idea will be to generate the elo score using pass 
+## statistical models on explanatory variables of eloscore
+```{r}
+
+```
+
+
+
+
+s 
 
 
