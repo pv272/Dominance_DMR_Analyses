@@ -7,6 +7,8 @@ library(dplyr)
 library(purrr)
 library(dbplyr)
 
+##Colin please edit and clean your code whenever you have time so I can try to understand all better 
+
 
 ### FROM MATTIAS SCRIPT 
 #################################################################################
