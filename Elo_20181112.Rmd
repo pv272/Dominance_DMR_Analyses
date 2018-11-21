@@ -8,7 +8,7 @@ editor_options:
 ---
 
 
-We are goint to calculate the dominance index using elo rating in our captive population of Damaraland mole-rat 
+We are goint to calculate the dominance index using elo rating in our captive population of Damaraland mole-rat and subsequently explain what predict dominance in that species 
 
 ```{r setup, include=FALSE}
 rm(list=ls())#clean environment
@@ -74,7 +74,7 @@ WeightList<-con %>%
   select(AnimalID,WeightDate,Weight,WeightType) %>% 
   filter(!(is.na(Weight)))
 
-#get the individual characteristics. Regular datacheck must be carried out on this essential query
+#get the individual characteristics. Regular datacheck must be carried out on this essential query to make sure no animal is missing
 ID_Characteristic <-
   con %>% 
   dbGetQuery("SELECT * FROM user_philippev.ID_Characteristic") %>% 
@@ -87,7 +87,7 @@ ID_Characteristic <-
 
 ## Preparation of sub call dataset 
 
-Extract the sub call from the scan and the focal data from the old fashion import. Thus most recend data are missing. The new fashion way will have to be added which will require a few axtra steps. The dataset of scan and focasl data are combined to increase our dataset
+Extract the sub call from the scan and the focal data from the old fashion import. Thus most recend data are missing. The new fashion way will have to be added which will require a few axtra steps. The dataset of scan and focals data are combined to increase our dataset
 ```{r SubCall}
 
 #scan call
@@ -228,13 +228,21 @@ save(AllCall_Elo,file="AllCall_Elo.rda")
 ```
 
 
-Eloscore could also be computed using passes interactions yet the dataset has to be prepared. 
+Eloscore could also be computed using passes interactions yet the dataset has to be prepared. Philippe will be doing that before the end of the week
 
 
 
 
-#Computation of EloScore
+#Computation of EloScore.
+So far Colin has modelled Elo score with constant start (1000) and optimization of K on all types of interactions.
 
+The next step would now be to run the same model on male-male interactions and on female-female interactions separately (exclude intersex interactions)
+
+The second step is to calculate the elo score as per Foerster model 2 (bottom start) and model 3 (fitted initial value) on all of the 3 types of dataset (all interactions, female-female interactions, male-male interactions)
+
+For each dataset one could compare which of the model is best fitted to the observed data and retain only the elo score returned by the best model for statistical inference. 
+
+One should however start modelling even the 3 models have not been run and use the data available for the first model 
 ```{r individual characteristics}
 # only retain the info we are interested in the weight 
 rm(list = ls())
@@ -274,16 +282,19 @@ out1 <- d2 %>%
 final_df <- bind_rows(out1$new_df)
 ```
 
-After Elo has been calculated, one has to organize dataframe in anticipation of statistical analyses and the Elo score that we may want to retain. One should:
-1) add the ratio of interaction per individuals: for each interaction the ratio is of 1:current group size. One can sum the ratio of each interaction to calculate the cumulative ration of interaction/individual. Sanchez 2016 shows that a ratio of 10 is good for steep hierarchy
-2) Add the number of interactions for each given pairs (colin has to provide code since he did that already)
-3) Add the number of interactions each individual was involved in 
+
+##Predicors of elo rating using mixed models 
+
+Step 1: Organize the different dataframe in anticipation of models. I have returned the individual characteristics (see below) have a look at them and see how we want to add them onto the dataset. Also do we want winner and loser in same column or not 
+
+Step 2: add info that may help us to decide which elo to retain for statistical inferences and which one we may not: 
+
+- add the ratio of interaction per individuals: for each interaction the ratio is of 1:current group size. One can sum the ratio of each interaction to calculate the cumulative ration of interaction/individual. Sanchez 2016 shows that a ratio of 10 is good for steep hierarchy
+- Add the number of interactions for each given pairs (colin has to provide code since he did that already)
+- Add the number of interactions each individual was involved in 
 
 
-#statistical inferences on explanatory variables of Elo score
-
-
-##Get explanatory variables for statistical inferences:
+Get explanatory variables for statistical inferences:
 Individual characteristic: weight, sex, age, breeding status, rank
 Add explanatory variables that we could think of. 
 ```{r}
@@ -339,16 +350,20 @@ nrow(Group_AllInfo)
 
 ```
 
-
+Colin you can add these info into the nested dataframe or where ever you think this is suitable for further analyses
 
 ## statistical models on explanatory variables of eloscore
+Elo score are put as response variable in mixed models 
+One shall start running some models even though we have not run the 3 models (1000, bottom, fitted) on the 3 dataset (all, male-male, female-female)
 ```{r}
+library(lme4)
+
 
 ```
 
 
+## statistical models on the variable that predicts who win at each interactions 
+explanatory variables are now the differences between the two partners.
 
-
-s 
 
 
