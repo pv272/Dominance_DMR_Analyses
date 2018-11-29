@@ -149,7 +149,6 @@ The AllCall data set has to be corrected and restructured before eloratings are 
 #We need to exclude interaction of individuals that interacted with themselves
 #We want to exclude the interactions between individuals that belonged to different group on a given date. When interactions occurred on the day individual changed group only interactions where the queried group is similar are possible
 source("Elo_functions.R")
-
 #get winner colony 
 WinnerColony <- get_Colony(
   AllCall%>% 
@@ -224,7 +223,7 @@ AllCall_Elo<-AllCall_Tidy %>%
   inner_join(.,ColonyToRetain)
 
 save(AllCall_Elo,file="AllCall_Elo.rda")
-
+save(AllCall_Tidy, file = "AllCall_Tidy.rda")
 ```
 
 
@@ -245,41 +244,41 @@ For each dataset one could compare which of the model is best fitted to the obse
 One should however start modelling even the 3 models have not been run and use the data available for the first model 
 ```{r individual characteristics}
 # only retain the info we are interested in the weight 
-rm(list = ls())
-source("Elo_functions.R")
-load("AllCall_Elo.rda")
-
-str(AllCall_Elo)
- 
-### optim K by colony
-d2$all_ids[[1]]
-d2 <- AllCall_Elo %>% nest(-Colony) %>%
-  mutate(all_ids = map(data, ~ unique(c(.x$Winner, .x$Loser)))) %>% ## get list of all ids (needed for fitting the elo)
-  mutate(K = map2_dbl(data, all_ids, ~ optim(par=4,  
-                                             fn = elo.model1,
-                                             burn_in=0, 
-                                             all_ids = .y, 
-                                             IA_data = .x,
-                                             return_likelihood=T, 
-                                             init_elo = 100, 
-                                             method= "Brent", 
-                                             upper = 15, 
-                                             lower = 0)$par)) 
-
-# compute Elo before / after / for Winner and Loser 
-out1 <- d2 %>% 
-  mutate(new_df = pmap(list(X = d2$data, Y = d2$all_ids, Z = as.list(d2$K)), function(X, Y, Z) {
-          out <- elo.model1(par = Z, 
-                            burn_in = 0, 
-                            init_elo = 1000, 
-                            IA_data = X, 
-                            all_ids = Y, 
-                            return_likelihood =F)
-          }
-     )) %>% 
-  mutate(new_df = map2(new_df, Colony, ~ .x %>% mutate(Colony = .y)))
-
-final_df <- bind_rows(out1$new_df)
+# This snippet creates a new df, with fitted elo, based on optimized K by colonies. 
+# rm(list = ls())
+# source("Elo_functions.R")
+# load("AllCall_Elo.rda")
+# 
+# str(AllCall_Elo)
+#  
+# ### optim K by colony
+# d2 <- AllCall_Elo %>% nest(-Colony) %>%
+#   mutate(all_ids = map(data, ~ unique(c(.x$Winner, .x$Loser)))) %>% ## get list of all ids (needed for fitting the elo)
+#   mutate(K = map2_dbl(data, all_ids, ~ optim(par=4,  
+#                                              fn = elo.model1,
+#                                              burn_in=0, 
+#                                              all_ids = .y, 
+#                                              IA_data = .x,
+#                                              return_likelihood=T, 
+#                                              init_elo = 100, 
+#                                              method= "Brent", 
+#                                              upper = 15, 
+#                                              lower = 0)$par)) 
+# 
+# # compute Elo before / after / for Winner and Loser 
+# out1 <- d2 %>% 
+#   mutate(new_df = pmap(list(X = d2$data, Y = d2$all_ids, Z = as.list(d2$K)), function(X, Y, Z) {
+#           out <- elo.model1(par = Z, 
+#                             burn_in = 0, 
+#                             init_elo = 1000, 
+#                             IA_data = X, 
+#                             all_ids = Y, 
+#                             return_likelihood =F)
+#           }
+#      )) %>% 
+#   mutate(new_df = map2(new_df, Colony, ~ .x %>% mutate(Colony = .y)))
+# 
+# final_df <- bind_rows(out1$new_df)
 ```
 
 
@@ -343,7 +342,7 @@ Group_AllInfo<-get_GroupID_Info(Group_ID_Info)
 names(Group_AllInfo)
 nrow(Group_AllInfo)
 
-
+save(Group_AllInfo, file = "Group_AllInfo.rda")
 #Questions for Colin
 #1) should we addf the Group_AllInfo into your nested dataframe and if yes how?
 
