@@ -310,3 +310,32 @@ get_GroupID_Info<-function(DF1){DF1 %>%
   # UNGROUP
 }
 
+##################### function to create the correlation matrix and get the PairID
+buildcorrsigned <- function(id1, id2) {
+  if(any(as.character(id1) == as.character(id2)))
+    stop("id1 and id2 are sometimes the same")
+  id1 <- paste(id1, sep = ":")
+  id2 <- paste(id2, sep = ":")
+  pairs <- paste(id1, id2, sep="_")
+  u_pairs <- unique(pairs)
+  E <- expand.grid(id1 = u_pairs, id2 = u_pairs)
+  AB <- strsplit(as.character(E$id1), "_")
+  E$A <- unlist(lapply(AB, function(i) i[1]))
+  E$B <- unlist(lapply(AB, function(i) i[2]))
+  CD <- strsplit(as.character(E$id2), "_")
+  E$C <- unlist(lapply(CD, function(i) i[1]))
+  E$D <- unlist(lapply(CD, function(i) i[2]))
+  E$U <- apply(E, 1, function(i) length(unique(i[c("A", "B", "C", "D")])))
+  E$Corr <- NA
+  E$Corr[(E$U <= 2) & (E$A == E$C)] <- 1
+  E$Corr[(E$U <= 2) & (E$A == E$D)] <- -1
+  E$Corr[E$U == 3 & ((E$A == E$C)|(E$B == E$D))] <- 0.5
+  E$Corr[E$U == 3 & ((E$A == E$D)|(E$B == E$C))] <- -0.5
+  E$Corr[E$U == 4] <- 0
+  E$A <- E$B <- E$C <- E$D <- NULL
+  M <- matrix(E$Corr, ncol=length(u_pairs), nrow=length(u_pairs))
+  rownames(M) <- colnames(M) <- u_pairs
+  
+  return(list(corrM = M, pairsID = pairs))
+}
+
