@@ -1,11 +1,11 @@
-library(RMySQL)
-library(getPass)
-library(EloRating)
+# library(RMySQL)
+# library(getPass)
+# library(EloRating)
 # library(tidyverse)
-library(lubridate)
-library(dplyr)
-library(purrr)
-library(dbplyr)
+# library(lubridate)
+# library(dplyr)
+# library(purrr)
+# library(dbplyr)
 
 ##Colin please edit and clean your code whenever you have time so I can try to understand all better 
 
